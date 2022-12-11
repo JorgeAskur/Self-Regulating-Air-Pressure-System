@@ -24,6 +24,23 @@ In this project we used:
 * Peripheral Interfacing via PWM & GPIO
 * PID Control
 
+#List of Materials
+
+* STM32H745ZI
+* NodeMCU
+* CAN Transceiver TJA1050
+* Arduino CAN Shield
+* Moto Monster Shield
+* Relay
+* Pressure Sensor
+* Air Pump
+* Solenoid Valve
+
+#Schematic
+![imagen](https://user-images.githubusercontent.com/74482029/206890135-b0d688f3-5255-453f-b7fb-229f076b0f55.png)
+
+
+
 ## Team members
 * Jorge Askur Vazquez
 * Andrés Sarellano
