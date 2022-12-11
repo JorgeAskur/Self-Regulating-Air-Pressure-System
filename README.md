@@ -12,8 +12,6 @@ The solution to this problem should satisfy the following goals:
 * Regulation of the air pressure depending on the terrain. 
 * Prevention of overfilling the tank.
 
-The main purpose of this system is to pump air pressure into a PVC tank, simulating the tire of a tractor, so it can adjust to terrains such as asphalt, mud and dirt. This would be useful for the tractor’s performance when it encounters these different lands and cause less damage to the tractor itself. 
-
 In this project we used:
 
 * CAN protocol
