@@ -21,3 +21,7 @@ In this project we used:
 * UART communication
 * Peripheral Interfacing via PWM & GPIO
 
+#Team members
+* Jorge Askur Vazquez
+* Andrés Sarellano
+* Izel María Ávila
