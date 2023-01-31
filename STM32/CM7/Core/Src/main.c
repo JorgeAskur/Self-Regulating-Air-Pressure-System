@@ -36,7 +36,7 @@
 #endif
 /* USER CODE END PD */
 
-/* Private macro -------------------------------------------------------------*/
+/* Private macro ------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 
 /* USER CODE END PM */
