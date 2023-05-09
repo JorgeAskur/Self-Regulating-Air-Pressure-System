@@ -5,6 +5,13 @@
   * @brief          : Main program body
   ******************************************************************************
   * @attention
+  * 
+  *   This code was developed in collaboration with the following people:
+  *   - Jorge Askur Vázquez Fernández
+  *   - Andrés Sarellano Acevedo
+  *   - Izel María Ávila Rodríguez
+  * 
+  * The code inside this file is meant to be run at an STM32H745 NUCLEO Board
   *
   * Copyright (c) 2022 STMicroelectronics.
   * All rights reserved.
@@ -42,19 +49,23 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+//  Analog to digital converter handler
 ADC_HandleTypeDef hadc3;
-
+//  CAN bus handler
 FDCAN_HandleTypeDef hfdcan1;
-
+//  PWM timer handler
 TIM_HandleTypeDef htim2;
-
+//  STM32H745 UART3 handler
 UART_HandleTypeDef huart3;
-
+//  CAN Filter Configuration
 FDCAN_FilterTypeDef sFilterConfig;
+//  CAN_Tx Header
 FDCAN_TxHeaderTypeDef TxHeader;
+//  CAN_Rx Header
 FDCAN_RxHeaderTypeDef RxHeader;
 UART_HandleTypeDef huart3;
-uint8_t Presion;
+//  Global Variable for displaying Tank's pressure
+uint8_t pressureVal;
 
 /* USER CODE BEGIN PV */
 
@@ -84,303 +95,271 @@ int main(void)
 {
   /* USER CODE BEGIN 1 */
 
-  /* USER CODE END 1 */
-/* USER CODE BEGIN Boot_Mode_Sequence_0 */
-  int32_t timeout;
-/* USER CODE END Boot_Mode_Sequence_0 */
+    /* USER CODE END 1 */
+  /* USER CODE BEGIN Boot_Mode_Sequence_0 */
+    int32_t timeout;
+  /* USER CODE END Boot_Mode_Sequence_0 */
 
-/* USER CODE BEGIN Boot_Mode_Sequence_1 */
-  /* Wait until CPU2 boots and enters in stop mode or timeout*/
+  /* USER CODE BEGIN Boot_Mode_Sequence_1 */
+    /* Wait until CPU2 boots and enters in stop mode or timeout*/
+    timeout = 0xFFFF;
+    while((__HAL_RCC_GET_FLAG(RCC_FLAG_D2CKRDY) != RESET) && (timeout-- > 0));
+    if ( timeout < 0 )
+    {
+    Error_Handler();
+    }
+  /* USER CODE END Boot_Mode_Sequence_1 */
+    /* MCU Configuration--------------------------------------------------------*/
+
+    /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+    HAL_Init();
+
+    /* USER CODE BEGIN Init */
+
+    /* USER CODE END Init */
+
+    /* Configure the system clock */
+    SystemClock_Config();
+  /* USER CODE BEGIN Boot_Mode_Sequence_2 */
+  /* When system initialization is finished, Cortex-M7 will release Cortex-M4 by means of
+  HSEM notification */
+  /*HW semaphore Clock enable*/
+  __HAL_RCC_HSEM_CLK_ENABLE();
+  /*Take HSEM */
+  HAL_HSEM_FastTake(HSEM_ID_0);
+  /*Release HSEM in order to notify the CPU2(CM4)*/
+  HAL_HSEM_Release(HSEM_ID_0,0);
+  /* wait until CPU2 wakes up from stop mode */
   timeout = 0xFFFF;
-  while((__HAL_RCC_GET_FLAG(RCC_FLAG_D2CKRDY) != RESET) && (timeout-- > 0));
+  while((__HAL_RCC_GET_FLAG(RCC_FLAG_D2CKRDY) == RESET) && (timeout-- > 0));
   if ( timeout < 0 )
   {
-  Error_Handler();
+    Error_Handler();
   }
-/* USER CODE END Boot_Mode_Sequence_1 */
-  /* MCU Configuration--------------------------------------------------------*/
+  /* USER CODE END Boot_Mode_Sequence_2 */
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+    /* USER CODE BEGIN SysInit */
 
-  /* USER CODE BEGIN Init */
+    /* USER CODE END SysInit */
 
-  /* USER CODE END Init */
+    /* Initialize all configured peripherals */
+    MX_GPIO_Init();
+    MX_USART3_UART_Init();
+    MX_FDCAN1_Init();
+    MX_ADC3_Init();
+    MX_TIM2_Init();
+    /* USER CODE BEGIN 2 */
 
-  /* Configure the system clock */
-  SystemClock_Config();
-/* USER CODE BEGIN Boot_Mode_Sequence_2 */
-/* When system initialization is finished, Cortex-M7 will release Cortex-M4 by means of
-HSEM notification */
-/*HW semaphore Clock enable*/
-__HAL_RCC_HSEM_CLK_ENABLE();
-/*Take HSEM */
-HAL_HSEM_FastTake(HSEM_ID_0);
-/*Release HSEM in order to notify the CPU2(CM4)*/
-HAL_HSEM_Release(HSEM_ID_0,0);
-/* wait until CPU2 wakes up from stop mode */
-timeout = 0xFFFF;
-while((__HAL_RCC_GET_FLAG(RCC_FLAG_D2CKRDY) == RESET) && (timeout-- > 0));
-if ( timeout < 0 )
-{
-Error_Handler();
-}
-/* USER CODE END Boot_Mode_Sequence_2 */
+    /* USER CODE END 2 */
 
-  /* USER CODE BEGIN SysInit */
+    /* Infinite loop */
+    /* USER CODE BEGIN WHILE */
+    /* USER CODE BEGIN WHILE */ /*AAO+*/
+    printf("Hello World\n\r");
 
-  /* USER CODE END SysInit */
+    //	Message data
+    uint8_t TxData[8] = {0x1D, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    uint8_t TxData2[8] = {0x0A, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    //  Setting default pressure setpoint
+    uint8_t Setpoint = 0;
+    //  Reading header
+    uint8_t RxData[8];
+    uint8_t pressureVal;
+    int32_t DC = 65535;
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_USART3_UART_Init();
-  MX_FDCAN1_Init();
-  MX_ADC3_Init();
-  MX_TIM2_Init();
-  /* USER CODE BEGIN 2 */
+    double e = 0.0, e_1=0.0, u=0.0, u_1=0.0;
+    double kp, ti, q0, q1;
 
-  /* USER CODE END 2 */
+    void PID_Initialize( void ){
+        double T = 1.59524;            //sample rate
+        //Complete here with the identified
+        //parameters of the plant
+      double k = 1;
+      double tao = 14.17;
+      double theta = 18.45;
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  /* USER CODE BEGIN WHILE */ /*AAO+*/
-	printf("Hello World\n\r");
+      //Calculate the coefficients for
+      //the discrete PID controller
+      kp = (0.9 * tao) / (k * theta);
+      ti = 3.333333 * theta;
+      q0 = kp + ((kp * T)/(2.0 * ti));
+      q1 = ((kp * T)/(2.0 * ti)) - kp;
+    }
 
-	//	Message data
-	uint8_t TxData[8] = {0x1D, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-	uint8_t TxData2[8] = {0x0A, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-	uint8_t Setpoint = 0;
-	uint8_t RxData[8];
-	uint8_t Presion;
-	int32_t DC = 65535;
+    double PID_Discrete( double yM , uint8_t setpoint){
+          double R = setpoint;            //set-point
+          e = R - yM;            //calculate the error
+          u = u_1 + q0*e + q1*e_1;    //discrete PID controller
+          //Saturate the controller with upper and lower limits
+          if(u >= 100) u = 20;
+          if (yM == 0) u = 20; //ressure value
+          if(u <= 0) u = 0;          //minimum pressure value
+          e_1 = e;
+          u_1 = u;
+          return u;
+        }
 
-	double e = 0.0, e_1=0.0, u=0.0, u_1=0.0;
-	double kp, ti, q0, q1;
+    /**
+     * 	Esta función activa el solenoide y el compresor dependiendo de la cantidad
+     * 	de presión que se desea tener en el tanque.
+     *	@param uint8_t setpoint  Es la Presión que se desea alcanzar.
+    *
+    * */
 
-	void PID_Initialize( void ){
-	    double T = 1.59524;            //sample rate
-	    //Complete here with the identified
-	    //parameters of the plant
-		double k = 1;
-		double tao = 14.17;
-		double theta = 18.45;
+    void adjustPressure( uint8_t setpoint)
+    {
 
-		//Calculate the coefficients for
-		//the discrete PID controller
-		kp = (0.9 * tao) / (k * theta);
-		ti = 3.333333 * theta;
-		q0 = kp + ((kp * T)/(2.0 * ti));
-		q1 = ((kp * T)/(2.0 * ti)) - kp;
-	}
+      HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, SET);
+      printf("DC: %d\n\r", DC);
 
-	double PID_Discrete( double yM , uint8_t setpoint){
-		    double R = setpoint;            //set-point
-		    e = R - yM;            //calculate the error
-		    u = u_1 + q0*e + q1*e_1;    //discrete PID controller
-		    //Saturate the controller with upper and lower limits
-		    if(u >= 100) u = 20;
-		    if (yM == 0) u = 20; //ressure value
-		    if(u <= 0) u = 0;          //minimum pressure value
-		    e_1 = e;
-		    u_1 = u;
-		    return u;
-	    }
-
-	/**
-	 * 	Esta función activa el solenoide y el compresor dependiendo de la cantidad
-	 * 	de presión que se desea tener en el tanque.
-	 *	@param uint8_t setpoint  Es la Presión que se desea alcanzar.
-	 *
-	 * */
-
-	void adjustPressure( uint8_t setpoint)
-	{
-
-		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, SET);
-		printf("DC: %d\n\r", DC);
-
-		double u = PID_Discrete(Presion, setpoint);
-		printf("PID: %2.2lf\n\r", u);
+      double u = PID_Discrete(pressureVal, setpoint);
+      printf("PID: %2.2lf\n\r", u);
 
 
-		if (Presion > setpoint - 5 && Presion < setpoint)
-		{
-			DC = (100-u)/100 * 65535;
+      if (pressureVal > setpoint - 5 && pressureVal < setpoint)
+      {
+        DC = (100-u)/100 * 65535;
 
-			printf("Compresor  Encendido \n\r");
-			printf("DC con PID: %d\n\r", DC);
-			TIM2->CCR1 = DC;
+        printf("Compresor  Encendido \n\r");
+        printf("DC con PID: %d\n\r", DC);
+        TIM2->CCR1 = DC;
 
-		} else if (Presion < setpoint){
-			DC = 65535;
-			TIM2->CCR1 = DC;
-		} else if(Presion > setpoint) {
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, SET);
-			HAL_Delay(100);
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, RESET);
-			printf("Se apago el solenoide\n\r");
+      } else if (pressureVal < setpoint){
+        DC = 65535;
+        TIM2->CCR1 = DC;
+      } else if(pressureVal > setpoint) {
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, SET);
+        HAL_Delay(100);
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, RESET);
+        printf("Se apago el solenoide\n\r");
 
-			TIM2->CCR1 = DC;
-			printf("Se activo el solenoide\n\r");
-		} else {
+        TIM2->CCR1 = DC;
+        printf("Se activo el solenoide\n\r");
+      } else {
 
-			DC = 51000;
-			TIM2->CCR1 = DC;
+        DC = 51000;
+        TIM2->CCR1 = DC;
 
-		}
+      }
 
-		/*
+    }
 
-		if (Presion < setpoint)
-		{
-			if (DC < 65000) {
-				DC += 1000;
-			}
-			TIM2->CCR1 = DC;
-			printf("Se apago el solenoide\n\r");
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, RESET);
-			printf("Compresor  Encendido \n\r");
-		}
-		else if(Presion > setpoint+1)
-		{
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, SET);
-			if (DC > 26000){
-				DC -= 1000;
-			}
-			TIM2->CCR1 = DC;
-			printf("Se activo el solenoide\n\r");
-		}
-		else
-		{
-			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, RESET);
-			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, SET);
-			DC = 40000;
-			TIM2->CCR1 = DC;
-		  //HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, SET);
-		  printf("Compresor Apagado \n\r");
-		}
-		*/
+    /**
+     * 	Esta función le asigna el valor de la presión deseada a la variable Setpoint para recibirse
+     * 	en la función adjustPressure para activar el sistema de control.
+     *
+     *	@param uint8_t RData[8]  Es un arreglo de 8 bytes, es el mensaje SPN recibido del CAN cuyo primer
+    *		elemento contiene el valorde los datos.
+    *	@return uint8_t pressureVal		Es el valor de presión que se desea tener en el tanque,
+    *		permanecerá la presión previa si no se recibe nada del CAN.
+    *
+    * */
+    uint8_t setSetpoint(uint8_t RData[8])
+    {
+      uint8_t setpoint;
+      RxHeader.Identifier = 0x10FEF9A3;
+      //	Identifier 0x10FEF9A3 -> Pressure Setpoint
+      //	Identifier 0x18FEEEA4 -> Meassured Pressure Front Right Tire
+      if(RxHeader.Identifier == 0x10FEF9A3)
+      {
 
+        //	Cambiamos el Identifier para mandar el mensaje bajo dicha directiva
+        TxHeader.Identifier = 0x18FEEEA4;
+        //	El primer valor de la transmisión es el valor de presión deseado, por lo que será el setpoint
+        setpoint = RData[0];
+        printf("Cambio de Setpoint: %d  \n\r", setpoint);
+        return setpoint;
+      }
+      return setpoint;
 
+    }
 
-	}
+    /**
+     * 	Esta función actualiza el valor del arreglo de transmisión para transmitir por el CAN
+     *	@param uint8_t TxData[8]  Es un arreglo de 8 bytes, es el mensaje SPN recibido del CAN cuyo primer
+    *		elemento contiene el valor de los datos.
+    *
+    * */
+    uint8_t transmitPressure(uint8_t TxData[8], uint8_t pressureVal)
+    {
+      //Definir parametros iniciales
+      //(HAY QUE CALIBRARLO)
+      uint16_t pressureZero = 2100;
+      uint16_t pressureMax = 16380;
 
-	/**
-	 * 	Esta función le asigna el valor de la presión deseada a la variable Setpoint para recibirse
-	 * 	en la función adjustPressure para activar el sistema de control.
-	 *
-	 *	@param uint8_t RData[8]  Es un arreglo de 8 bytes, es el mensaje SPN recibido del CAN cuyo primer
-	 *		elemento contiene el valorde los datos.
-	 *	@return uint8_t Presion		Es el valor de presión que se desea tener en el tanque,
-	 *		permanecerá la presión previa si no se recibe nada del CAN.
-	 *
-	 * */
-	uint8_t setSetpoint(uint8_t RData[8])
-	{
-		uint8_t setpoint;
-		RxHeader.Identifier = 0x10FEF9A3;
-		//	Identifier 0x10FEF9A3 -> Pressure Setpoint
-		//	Identifier 0x18FEEEA4 -> Meassured Pressure Front Right Tire
-		if(RxHeader.Identifier == 0x10FEF9A3)
-		{
+      //	Definimos el Identifier para transmitir la presión actual
+      TxHeader.Identifier = 0x18FEEEA4;
 
-			//	Cambiamos el Identifier para mandar el mensaje bajo dicha directiva
-			TxHeader.Identifier = 0x18FEEEA4;
-			//	El primer valor de la transmisión es el valor de presión deseado, por lo que será el setpoint
-			setpoint = RData[0];
-			printf("Cambio de Setpoint: %d  \n\r", setpoint);
-			return setpoint;
-		}
-		return setpoint;
+      //	Inicializamos el ADC
+      HAL_ADC_Start(&hadc3);
+      //	Preguntamos si se esta recibiendo algo
+      HAL_ADC_PollForConversion(&hadc3, HAL_MAX_DELAY);
+      //	Guardamos el valor obtenido
+      uint16_t raw = HAL_ADC_GetValue(&hadc3);
 
-	}
+      //	Se descartan los dos LSB para eliminar algo de ruido
+      raw = raw >> 2;
+      raw = raw << 2;
 
-	/**
-	 * 	Esta función actualiza el valor del arreglo de transmisión para transmitir por el CAN
-	 *	@param uint8_t TxData[8]  Es un arreglo de 8 bytes, es el mensaje SPN recibido del CAN cuyo primer
-	 *		elemento contiene el valor de los datos.
-	 *
-	 * */
-	uint8_t transmitPressure(uint8_t TxData[8], uint8_t Presion)
-	{
-		//Definir parametros iniciales
-		//(HAY QUE CALIBRARLO)
-		uint16_t pressureZero = 2100;
-		uint16_t pressureMax = 16380;
+      //	Imprimir valor de resolucion obtenido
+      printf("Raw = %d \n\r", raw);
+      //	Convertir a PSI
+      pressureVal = ((raw - pressureZero)*100)/ (pressureMax - pressureZero);
+      //	Imprimir el valor de pressureVal final
+      printf("Pressure = %d PSI \n\r", pressureVal);
+      return pressureVal;
+    }
 
-		//	Definimos el Identifier para transmitir la presión actual
-		TxHeader.Identifier = 0x18FEEEA4;
+    RxHeader.Identifier = 0x10FEF9A3;
+    PID_Initialize();
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, RESET);
+    while (1)
+    {
+        /*	Transmisión de datos	*/
+        if(HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData) != HAL_OK)
+        {
+          printf("aux sent\n\r");
+          Error_Handler();
+        }
+        //	Significant delay to show the functionality on a slow pace.
+        //HAL_Delay(500);
 
-		//	Inicializamos el ADC
-		HAL_ADC_Start(&hadc3);
-		//	Preguntamos si se esta recibiendo algo
-		HAL_ADC_PollForConversion(&hadc3, HAL_MAX_DELAY);
-		//	Guardamos el valor obtenido
-		uint16_t raw = HAL_ADC_GetValue(&hadc3);
-
-		//	Se descartan los dos LSB para eliminar algo de ruido
-		raw = raw >> 2;
-		raw = raw << 2;
-
-		//	Imprimir valor de resolucion obtenido
-		printf("Raw = %d \n\r", raw);
-		//	Convertir a PSI
-		Presion = ((raw - pressureZero)*100)/ (pressureMax - pressureZero);
-		//	Imprimir el valor de presion final
-		printf("Pressure = %d PSI \n\r", Presion);
-		return Presion;
-	}
-
-	RxHeader.Identifier = 0x10FEF9A3;
-	PID_Initialize();
-	HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, RESET);
-	while (1)
-	{
-	    /*	Transmisión de datos	*/
-	   	if(HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &TxHeader, TxData) != HAL_OK)
-	   	{
-	   		printf("aux sent\n\r");
-	   		Error_Handler();
-	   	}
-	   	//	Significant delay to show the functionality on a slow pace.
-	   	//HAL_Delay(500);
-
-	   	printf("\nMessage sent\r");
+        printf("\nMessage sent\r");
 
 
-	   	/*	Recepción de datos	*/
-		while (HAL_FDCAN_GetRxMessage(&hfdcan1, FDCAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK);
+        /*	Recepción de datos	*/
+      while (HAL_FDCAN_GetRxMessage(&hfdcan1, FDCAN_RX_FIFO0, &RxHeader, RxData) != HAL_OK);
 
-		//HAL_Delay(10);
-		printf("CAN ID: 0x%.8lX \n\r", RxHeader.Identifier);
+      //HAL_Delay(10);
+      printf("CAN ID: 0x%.8lX \n\r", RxHeader.Identifier);
 
-		printf("CAN Message: \n\r");
-		int dataSize = RxHeader.DataLength >>  16;
-		for (int i = 0; i < dataSize; i ++)
-		{
-		    printf(" %x", RxData[i]);
-     	}
-		printf("\n\r");
+      printf("CAN Message: \n\r");
+      int dataSize = RxHeader.DataLength >>  16;
+      for (int i = 0; i < dataSize; i ++)
+      {
+          printf(" %x", RxData[i]);
+        }
+      printf("\n\r");
 
-		//	Si se recibe un valor del Dashboard para actualizar la presión, el Setpoint se actualiza.
-		Setpoint =  setSetpoint(RxData);
-		//	Ajustamos la presión del tanque con el setpoint presentado
-		adjustPressure(Setpoint);
-		//	Actualización de los datos para mandar al NodeMCU
-		Presion = transmitPressure(RxData, Presion);
-		//	Actualizamos el SPN para mandar el dato deseado
-		TxData[0] = Presion;
+      //	Si se recibe un valor del Dashboard para actualizar la presión, el Setpoint se actualiza.
+      Setpoint =  setSetpoint(RxData);
+      //	Ajustamos la presión del tanque con el setpoint presentado
+      adjustPressure(Setpoint);
+      //	Actualización de los datos para mandar al NodeMCU
+      pressureVal = transmitPressure(RxData, pressureVal);
+      //	Actualizamos el SPN para mandar el dato deseado
+      TxData[0] = pressureVal;
 
-		HAL_GPIO_TogglePin(LD1_GPIO_Port,LD1_Pin);
-		//HAL_Delay(100); //AAO
+      HAL_GPIO_TogglePin(LD1_GPIO_Port,LD1_Pin);
+      //HAL_Delay(100); //AAO
 
-	}
-    /* USER CODE END WHILE */
+    }
+      /* USER CODE END WHILE */
 
-    /* USER CODE BEGIN 3 */
+      /* USER CODE BEGIN 3 */
 
-  /* USER CODE END 3 */
+    /* USER CODE END 3 */
 }
 
 
